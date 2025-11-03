@@ -23,25 +23,47 @@ The script is designed with a clear separation of concerns, organized into sever
 
 -   **`StateManager`**: Manages the state of processed events to prevent double-spending or replay attacks. In this simulation, it uses a simple in-memory `set`. In a production environment, this would be replaced with a connection to a persistent database like Redis or PostgreSQL for fault tolerance.
 
--   **`TransactionRelayer`**: Simulates the communication with a relayer service. It takes processed event data, formats it into a JSON payload, and POSTs it to a configured API endpoint using the `requests` library. It includes basic retry logic with exponential backoff to handle transient network issues.
+-   **`TransactionRelayer`**: Simulates communication with a relayer service. It takes processed event data, formats it into a JSON payload, and POSTs it to a configured API endpoint using the `requests` library. It includes basic retry logic with exponential backoff to handle transient network issues.
 
 -   **`CrossChainEventListener`**: The main orchestrator. It ties all the other components together. Its `run()` method contains the main loop that periodically polls the blockchain for new events, processes them through the `_process_event` method, and uses the `TransactionRelayer` and `StateManager` to handle the subsequent steps.
 
-This modular architecture makes the system easier to test, maintain, and extend.
+This modular architecture makes the system easier to test, maintain, and extend. A simplified view of how these components are initialized and run:
+
+```python
+# A simplified view from the main script
+
+def main():
+    config = Config()
+    connector = BlockchainConnector(config.SOURCE_CHAIN_RPC_URL)
+    state_manager = StateManager()
+    relayer = TransactionRelayer(config.RELAYER_API_ENDPOINT)
+
+    listener = CrossChainEventListener(
+        config=config,
+        connector=connector,
+        state_manager=state_manager,
+        relayer=relayer
+    )
+
+    listener.run()
+
+if __name__ == "__main__":
+    main()
+```
 
 ## How it Works
 
 The operational flow of the script is as follows:
 
-1.  **Initialization**: The script starts, and the `Config` class loads required parameters (RPC URL, contract address) from a `.env` file.
+1.  **Initialization**: The script starts, and the `Config` class loads required parameters (RPC URL, contract address, etc.) from a `.env` file.
 2.  **Connection**: The `CrossChainEventListener` instantiates a `BlockchainConnector`, which establishes a connection to the specified source chain's RPC endpoint.
-3.  **Contract Setup**: The listener gets a `web3.py` contract object representing the on-chain `Bridge` contract using its address and a predefined ABI.
+3.  **Contract Setup**: The listener initializes a `web3.py` contract object representing the on-chain `Bridge` contract using its address and a predefined ABI.
 4.  **Polling Loop**: The script enters an infinite `while` loop.
 5.  **Block Range Query**: In each iteration, it determines a range of blocks to scan (from the last scanned block to the current latest block).
 6.  **Event Filtering**: It creates a filter on the `Bridge` contract for the `TokensLocked` event within that block range.
 7.  **Event Processing**: If any events are found:
     a.  The script iterates through each event.
-    b.  It extracts the unique `transactionId` from the event data.
+    b.  It extracts a unique `transactionId` from the event data.
     c.  The `StateManager` is checked to see if this ID has already been processed. If so, the event is skipped to prevent duplicates.
     d.  If the event is new, its data is packaged and passed to the `TransactionRelayer`.
 8.  **Relaying**: The `TransactionRelayer` sends the event data via an HTTP POST request to the configured API endpoint.
@@ -50,7 +72,7 @@ The operational flow of the script is as follows:
 
 This process continues indefinitely, ensuring near-real-time processing of cross-chain transactions.
 
-## Usage Example
+## Getting Started
 
 Follow these steps to run the event listener simulation.
 
@@ -77,10 +99,12 @@ Create a file named `.env` in the root directory and add the following content. 
 # RPC URL for the source chain (e.g., Ethereum Sepolia Testnet)
 SOURCE_CHAIN_RPC_URL="https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID"
 
-# Address of the deployed Bridge smart contract to monitor
-# For demonstration, you can use a verified contract on a testnet that has relevant events.
-# Example: A known contract on Sepolia
-BRIDGE_CONTRACT_ADDRESS="0x779877A7B0D9E8603169DdbD7836e478b4624789" # Chainlink Token on Sepolia (for event demo)
+# Address of the Bridge smart contract to monitor.
+# NOTE: The default script looks for a 'TokensLocked' event. The example address below
+# is for the Chainlink Token on Sepolia, which emits 'Transfer' events. To see output
+# with this address, you would need to modify the event name in the script's code.
+# For a true simulation, use the address of a bridge contract you have deployed.
+BRIDGE_CONTRACT_ADDRESS="0x779877A7B0D9E8603169DdbD7836e478b4624789"
 
 # The API endpoint of the relayer service. httpbin.org is used for testing.
 RELAYER_API_ENDPOINT="https://httpbin.org/post"
@@ -104,9 +128,14 @@ The script will start logging its status to the console. You will see messages a
 
 When an event matching the filter is found, you will see detailed logs like this:
 
-```
-2023-10-27 15:30:10 - INFO - [script.run] - Found 1 new event(s) between blocks 4651200 and 4651205.
-2023-10-27 15:30:10 - INFO - [script._process_event] - New 'TokensLocked' event detected. Tx Hash: 0x...a1b2, TxID: 0x...c3d4
-2023-10-27 15:30:10 - INFO - [TransactionRelayer.relay_transaction_data] - Relaying data for TxID: 0x...c3d4
-2023-10-27 15:30:11 - INFO - [TransactionRelayer.relay_transaction_data] - Successfully relayed TxID 0x...c3d4. API Response: 200
+```log
+INFO:Bugs-Hunt:Connecting to source chain at https://sepolia.infura.io/v3/...
+INFO:Bugs-Hunt:Successfully connected. Latest block: 5123456
+INFO:Bugs-Hunt:Starting event listener loop...
+INFO:Bugs-Hunt:Scanning blocks from 5123356 to 5123456...
+INFO:Bugs-Hunt:Found 1 new event(s).
+INFO:Bugs-Hunt:New 'TokensLocked' event detected. Tx Hash: 0x...a1b2, TxID: 12345
+INFO:TransactionRelayer:Relaying data for transaction ID: 12345
+INFO:TransactionRelayer:Successfully relayed transaction ID 12345. API Response: 200
+INFO:StateManager:State updated for transaction ID: 12345
 ```
