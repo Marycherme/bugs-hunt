@@ -1,6 +1,6 @@
 # Bugs-Hunt: Cross-Chain Bridge Event Listener
 
-This repository contains a Python-based simulation of a critical component in a cross-chain bridge architecture: the **Event Listener**. This service is designed to monitor a `Bridge` smart contract on a source blockchain, detect specific events (e.g., `TokensLocked`), and relay this information to an off-chain service responsible for completing the transaction on the destination chain.
+This repository contains a Python-based simulation of a critical component in a cross-chain bridge architecture: the **Event Listener**. This service is designed to monitor a `Bridge` smart contract on a source blockchain, detect specific events (such as `TokensLocked`), and relay this information to an off-chain service responsible for completing the transaction on the destination chain.
 
 ## Concept
 
@@ -24,6 +24,18 @@ The script is designed with a clear separation of concerns, organized into sever
 -   **`StateManager`**: Manages the state of processed events to prevent double-spending or replay attacks. In this simulation, it uses a simple in-memory `set`. In a production environment, this would be replaced with a connection to a persistent database like Redis or PostgreSQL for fault tolerance.
 
 -   **`TransactionRelayer`**: Simulates communication with a relayer service. It takes processed event data, formats it into a JSON payload, and POSTs it to a configured API endpoint using the `requests` library. It includes basic retry logic with exponential backoff to handle transient network issues.
+
+    ```json
+    // Example JSON payload sent to the relayer
+    {
+      "transactionId": "12345",
+      "sender": "0xSenderAddress...",
+      "recipient": "0xRecipientAddress...",
+      "amount": 1000000000000000000,
+      "sourceChainId": 1,
+      "destinationChainId": 42161
+    }
+    ```
 
 -   **`CrossChainEventListener`**: The main orchestrator. It ties all the other components together. Its `run()` method contains the main loop that periodically polls the blockchain for new events, processes them through the `_process_event` method, and uses the `TransactionRelayer` and `StateManager` to handle the subsequent steps.
 
@@ -64,7 +76,7 @@ The operational flow of the script is as follows:
 7.  **Event Processing**: If any events are found:
     a.  The script iterates through each event.
     b.  It extracts a unique `transactionId` from the event data.
-    c.  The `StateManager` is checked to see if this ID has already been processed. If so, the event is skipped to prevent duplicates.
+    c.  It checks the `StateManager` to see if this `transactionId` has already been processed. If so, the event is skipped to prevent duplicates.
     d.  If the event is new, its data is packaged and passed to the `TransactionRelayer`.
 8.  **Relaying**: The `TransactionRelayer` sends the event data via an HTTP POST request to the configured API endpoint.
 9.  **State Update**: If the relay was successful, the `StateManager` is updated to mark the `transactionId` as processed.
@@ -78,7 +90,7 @@ Follow these steps to run the event listener simulation.
 
 **1. Clone the repository:**
 ```bash
-git clone <repository-url>
+git clone https://github.com/your-username/bugs-hunt.git
 cd bugs-hunt
 ```
 
